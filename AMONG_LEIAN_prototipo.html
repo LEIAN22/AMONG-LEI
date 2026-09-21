@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>AMONG LEIAN — Prototipo</title>
+<style>
+:root{--bg:#07111f;--panel:#10243a;--cyan:#39c7ff;--text:#eaf7ff;--muted:#9bb4c8}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden;touch-action:none}
+#wrap{height:100dvh;display:flex;flex-direction:column}
+header{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#0b1a2b;border-bottom:1px solid #21415e;gap:8px}
+h1{font-size:16px;letter-spacing:1.5px;margin:0}.sub{font-size:11px;color:var(--muted)}
+#hud{display:flex;gap:8px;align-items:center;font-size:12px;flex-wrap:wrap;justify-content:flex-end}
+.pill{padding:5px 8px;border:1px solid #2b5476;border-radius:99px;background:#102a43}
+#game{flex:1;min-height:0;position:relative}canvas{display:block;width:100%;height:100%;touch-action:none}
+#bottom{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#0b1a2b;border-top:1px solid #21415e;gap:10px}
+#msg{font-size:12px;color:#c5deef;min-height:32px;display:flex;align-items:center;flex:1}
+button{border:1px solid #347aa5;background:#123b5b;color:white;border-radius:12px;padding:10px 13px;font-weight:700;font-size:13px}
+button:active{transform:scale(.97);background:#1b5c85}
+#controls{position:absolute;inset:0;pointer-events:none}
+#stick{position:absolute;left:18px;bottom:18px;width:112px;height:112px;border-radius:50%;background:#0b1e30bb;border:2px solid #4e88ac;pointer-events:auto;touch-action:none}
+#nub{position:absolute;width:46px;height:46px;left:31px;top:31px;border-radius:50%;background:#56caffaa;border:2px solid #c5f0ff}
+#action{position:absolute;right:18px;bottom:27px;pointer-events:auto;min-width:88px;min-height:58px;border-radius:50%;background:#0b4e70e8;border:2px solid #58cfff}
+#modal{position:absolute;inset:0;background:#020914dd;display:none;align-items:center;justify-content:center;padding:20px}
+.card{width:min(420px,100%);background:#10243a;border:1px solid #3d7296;border-radius:18px;padding:20px;box-shadow:0 18px 70px #0009}
+.card h2{margin:0 0 8px}.card p{color:#c1d6e5;line-height:1.4;font-size:14px}
+#taskBtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.small{font-size:11px;color:var(--muted)}
+@media(min-width:700px){h1{font-size:20px}#stick{width:130px;height:130px}#nub{left:39px;top:39px}}
+</style>
+</head>
+<body>
+<div id="wrap">
+<header><div><h1>🚀 AMONG LEIAN</h1><div class="sub">PROTOTIPO JUGABLE · NAVE ESPACIAL</div></div>
+<div id="hud"><span class="pill" id="time">10:00</span><span class="pill" id="tasks">Tareas 0/5</span><span class="pill" id="role">Tripulante</span></div></header>
+<div id="game"><canvas id="c"></canvas>
+<div id="controls"><div id="stick"><div id="nub"></div></div><button id="action">USAR</button></div>
+<div id="modal"><div class="card" id="card"></div></div>
+</div>
+<div id="bottom"><div id="msg">Muévete con el joystick. Acércate a los paneles brillantes y pulsa USAR.</div><button id="help">AYUDA</button><button id="restart">REINICIAR</button></div>
+</div>
+<script>
+(()=> {
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const timeEl=document.getElementById('time'),tasksEl=document.getElementById('tasks'),roleEl=document.getElementById('role'),msg=document.getElementById('msg');
+const stick=document.getElementById('stick'),nub=document.getElementById('nub'),action=document.getElementById('action'),modal=document.getElementById('modal'),card=document.getElementById('card');
+let W=800,H=600,dpr=1, last=0, elapsed=0, complete=0, running=true, inTask=false;
+const map={w:1000,h:720};
+const rooms=[
+ {name:'REACTOR',x:45,y:70,w:235,h:205,col:'#512c3b'},
+ {name:'CAFETERÍA',x:350,y:35,w:300,h:220,col:'#263f5b'},
+ {name:'NAVEGACIÓN',x:720,y:95,w:230,h:180,col:'#173e59'},
+ {name:'ALMACÉN',x:45,y:345,w:235,h:180,col:'#4b4430'},
+ {name:'SEGURIDAD',x:350,y:330,w:200,h:165,col:'#1d4b58'},
+ {name:'O2',x:590,y:330,w:170,h:165,col:'#31534c'},
+ {name:'ADMIN',x:785,y:340,w:165,h:165,col:'#4c3448'},
+ {name:'ELECTRICIDAD',x:45,y:575,w:235,h:110,col:'#45402b'},
+ {name:'ENFERMERÍA',x:350,y:545,w:300,h:140,col:'#27475a'}
+];
+const corridors=[
+{x:280,y:140,w:70,h:65},{x:650,y:145,w:70,h:65},
+{x:150,y:275,w:65,h:70},{x:385,y:255,w:65,h:75},{x:650,y:255,w:70,h:75},{x:810,y:275,w:70,h:65},
+{x:280,y:390,w:70,h:65},{x:550,y:390,w:40,h:65},{x:760,y:390,w:25,h:65},
+{x:150,y:525,w:65,h:50},{x:385,y:495,w:65,h:50},{x:650,y:495,w:65,h:50},
+{x:280,y:590,w:70,h:55},{x:650,y:590,w:135,h:55}
+];
+const tasks=[
+ {name:'Conectar cableado',x:395,y:82,done:false,kind:'wires'},
+ {name:'Calibrar reactor',x:115,y:160,done:false,kind:'sequence'},
+ {name:'Revisar oxígeno',x:655,y:390,done:false,kind:'press'},
+ {name:'Reparar electricidad',x:130,y:625,done:false,kind:'press'},
+ {name:'Analizar muestras',x:470,y:610,done:false,kind:'sequence'}
+];
+const vents=[{x:90,y:100},{x:230,y:470},{x:880,y:455},{x:615,y:615}];
+let player={x:500,y:195,r:17,speed:190},bots=[];
+function reset(){elapsed=0;complete=0;running=true;inTask=false;player={x:500,y:195,r:17,speed:190};tasks.forEach(t=>t.done=false);bots=[];for(let i=0;i<5;i++)bots.push({x:390+(i%3)*75,y:380+Math.floor(i/3)*75,color:['#ff5d5d','#ffc857','#a78bfa','#5eead4','#fb923c'][i],phase:Math.random()*7});modal.style.display='none';msg.textContent='Muévete con el joystick. Acércate a los paneles brillantes y pulsa USAR.'}
+let input={x:0,y:0}, activePointer=null;
+function resize(){const r=canvas.getBoundingClientRect();dpr=Math.min(devicePixelRatio||1,2);W=r.width;H=r.height;canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
+new ResizeObserver(resize).observe(canvas);
+function pointerPos(e){const r=stick.getBoundingClientRect();return {x:e.clientX-r.left-r.width/2,y:e.clientY-r.top-r.height/2}}
+stick.addEventListener('pointerdown',e=>{activePointer=e.pointerId;stick.setPointerCapture(e.pointerId);moveStick(e)});
+stick.addEventListener('pointermove',e=>{if(activePointer===e.pointerId)moveStick(e)});
+function moveStick(e){const p=pointerPos(e),max=35,len=Math.hypot(p.x,p.y)||1,k=Math.min(1,max/len);input.x=p.x/len*k;input.y=p.y/len*k;nub.style.left=(33+input.x*35)+'px';nub.style.top=(33+input.y*35)+'px'}
+function endStick(e){if(activePointer===e.pointerId){activePointer=null;input={x:0,y:0};nub.style.left='31px';nub.style.top='31px'}}
+stick.addEventListener('pointerup',endStick);stick.addEventListener('pointercancel',endStick);
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function nearestTask(){let best=null,dist=Infinity;for(const t of tasks){if(t.done)continue;let d=Math.hypot(t.x-player.x,t.y-player.y);if(d<dist){dist=d;best=t}}return dist<58?best:null}
+function nearestVent(){let best=null,dist=Infinity;for(const v of vents){let d=Math.hypot(v.x-player.x,v.y-player.y);if(d<dist){dist=d;best=v}}return dist<45?best:null}
+function useAction(){if(!running||inTask)return;let t=nearestTask();if(t){openTask(t);return}let v=nearestVent();if(v){msg.textContent='Conducto secreto: disponible solo para impostores (función futura).';return}msg.textContent='No hay nada que usar cerca. Acércate a un panel brillante.'}
+action.addEventListener('click',useAction);
+function showModal(html){card.innerHTML=html;modal.style.display='flex'}
+function closeModal(){modal.style.display='none';inTask=false}
+function openTask(t){inTask=true;
+ let body='';
+ if(t.kind==='wires')body=`<p>Conecta los dos terminales del mismo color.</p><div id="taskBtns"><button data-do="finish">🔵 Azul → Azul</button><button data-do="finish">🟡 Amarillo → Amarillo</button></div>`;
+ else if(t.kind==='sequence')body=`<p>Pulsa los tres módulos en orden para completar la tarea.</p><div id="taskBtns"><button data-do="seq">1</button><button data-do="seq">2</button><button data-do="seq">3</button></div><p class="small" id="seqStatus">Secuencia: 0/3</p>`;
+ else body=`<p>Mantén la reparación durante un ciclo de diagnóstico.</p><div id="taskBtns"><button data-do="finish">INICIAR REPARACIÓN</button></div>`;
+ showModal(`<h2>${t.name}</h2>${body}<div id="taskBtns"><button id="cancel">VOLVER</button></div>`);
+ let seq=0;card.querySelector('#cancel').onclick=closeModal;
+ card.querySelectorAll('[data-do="finish"]').forEach(b=>b.onclick=()=>finishTask(t));
+ card.querySelectorAll('[data-do="seq"]').forEach((b,i)=>b.onclick=()=>{if(i===seq){seq++;card.querySelector('#seqStatus').textContent=`Secuencia: ${seq}/3`;if(seq===3)finishTask(t)}else{seq=0;card.querySelector('#seqStatus').textContent='Incorrecto. Secuencia: 0/3'}});
+}
+function finishTask(t){t.done=true;complete++;closeModal();msg.textContent='¡Tarea completada! Sigue con la siguiente.';updateHUD();if(complete===tasks.length)endGame('¡Victoria de la tripulación! Completaste todas las tareas.')}
+function endGame(text){running=false;showModal(`<h2>🏆 Fin de partida</h2><p>${text}</p><p>Tiempo: ${formatTime(600-elapsed)} · Tareas: ${complete}/${tasks.length}</p><button id="again">JUGAR OTRA VEZ</button>`);card.querySelector('#again').onclick=reset}
+document.getElementById('help').onclick=()=>showModal(`<h2>Cómo jugar</h2><p>Usa el joystick para recorrer la nave. Acércate a los paneles con brillo y pulsa <b>USAR</b> para resolver tareas. Completa las 5 tareas antes de que termine el tiempo.</p><p>Los otros personajes son bots decorativos en esta demo. El online, los impostores funcionales, reuniones y votaciones aún no están incluidos.</p><button id="ok">ENTENDIDO</button>`),setTimeout(()=>{let b=card.querySelector('#ok');if(b)b.onclick=closeModal},0);
+document.getElementById('restart').onclick=reset;
+function formatTime(s){s=Math.max(0,Math.floor(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function updateHUD(){timeEl.textContent=formatTime(600-elapsed);tasksEl.textContent=`Tareas ${complete}/${tasks.length}`;roleEl.textContent='Tripulante'}
+function draw(){ctx.clearRect(0,0,W,H);let scale=Math.min(W/map.w,H/map.h);let ox=(W-map.w*scale)/2,oy=(H-map.h*scale)/2;ctx.save();ctx.translate(ox,oy);ctx.scale(scale,scale);
+ // hull and space
+ ctx.fillStyle='#0a1726';ctx.fillRect(0,0,map.w,map.h);
+ ctx.strokeStyle='#254765';ctx.lineWidth=8;ctx.strokeRect(15,15,map.w-30,map.h-30);
+ corridors.forEach(c=>{ctx.fillStyle='#1a2e42';ctx.fillRect(c.x,c.y,c.w,c.h);ctx.strokeStyle='#45657e';ctx.lineWidth=3;ctx.strokeRect(c.x,c.y,c.w,c.h)});
+ rooms.forEach(r=>{ctx.fillStyle=r.col;ctx.fillRect(r.x,r.y,r.w,r.h);ctx.strokeStyle='#6c8ba3';ctx.lineWidth=5;ctx.strokeRect(r.x,r.y,r.w,r.h);ctx.fillStyle='#d9efff';ctx.font='bold 17px system-ui';ctx.textAlign='center';ctx.fillText(r.name,r.x+r.w/2,r.y+25);
+ // floor tiles
+ ctx.strokeStyle='#ffffff13';ctx.lineWidth=1;for(let x=r.x+20;x<r.x+r.w;x+=35){ctx.beginPath();ctx.moveTo(x,r.y+35);ctx.lineTo(x,r.y+r.h-5);ctx.stroke()}
+ });
+ // Cafeteria tables
+ for(const [x,y] of [[430,130],[560,130],[495,205]]){ctx.fillStyle='#2f6b91';ctx.beginPath();ctx.arc(x,y,27,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#9ddfff';ctx.lineWidth=3;ctx.stroke()}
+ // task markers
+ tasks.forEach(t=>{if(t.done)return;ctx.fillStyle='#ffe16a';ctx.shadowColor='#ffe16a';ctx.shadowBlur=15;ctx.beginPath();ctx.arc(t.x,t.y,12,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#2c2600';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.fillText('!',t.x,t.y+5)});
+ // vents
+ vents.forEach(v=>{ctx.fillStyle='#0b1019';ctx.fillRect(v.x-15,v.y-10,30,20);ctx.strokeStyle='#36caff';ctx.lineWidth=3;ctx.strokeRect(v.x-15,v.y-10,30,20);for(let i=-8;i<=8;i+=8){ctx.beginPath();ctx.moveTo(v.x+i,v.y-7);ctx.lineTo(v.x+i,v.y+7);ctx.stroke()}});
+ // bots
+ bots.forEach(b=>{b.phase+=.012;let bx=b.x+Math.sin(b.phase)*12,by=b.y+Math.cos(b.phase*.8)*8;drawCrew(bx,by,b.color,false)});
+ drawCrew(player.x,player.y,'#4dc9ff',true);
+ // nearest prompt
+ let t=nearestTask();if(t){ctx.fillStyle='#fff';ctx.font='bold 14px system-ui';ctx.textAlign='center';ctx.fillText('PULSA USAR',player.x,player.y-30)}
+ ctx.restore();
+}
+function drawCrew(x,y,color,isPlayer){ctx.save();ctx.translate(x,y);ctx.fillStyle='#0008';ctx.beginPath();ctx.ellipse(0,17,17,7,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(-15,-19,30,38,12);ctx.fill();ctx.fillStyle='#bfefff';ctx.beginPath();ctx.ellipse(5,-7,12,8,-.2,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#ffffffaa';ctx.lineWidth=2;ctx.stroke();if(isPlayer){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,23,0,Math.PI*2);ctx.stroke()}ctx.restore()}
+function worldFromScreen(){let scale=Math.min(W/map.w,H/map.h);return scale}
+function update(dt){if(!running||inTask)return;elapsed+=dt;if(elapsed>=600){elapsed=600;endGame('Se acabó el tiempo. En esta demo gana la tripulación si completó todas las tareas.');return}
+ let dx=input.x,dy=-input.y,len=Math.hypot(dx,dy);if(len>0){player.x+=dx/Math.max(1,len)*player.speed*dt;player.y+=dy/Math.max(1,len)*player.speed*dt}
+ player.x=clamp(player.x,30,map.w-30);player.y=clamp(player.y,30,map.h-30);
+ // Simple room/corridor boundary-free navigation for prototype
+ updateHUD();
+}
+function loop(ts){let dt=Math.min(.04,(ts-last)/1000||0);last=ts;update(dt);draw();requestAnimationFrame(loop)}
+reset();resize();requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
